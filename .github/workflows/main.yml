@@ -98,7 +98,7 @@ jobs:
                   targetSdk 34
                   // minutes since 1970: always bigger than the previous build, so Android never sees it as a downgrade
                   versionCode System.currentTimeMillis().intdiv(60000L).intValue()
-                  versionName "29.1"
+                  versionName "30.0"
               }
               buildTypes {
                   debug { signingConfig signingConfigs.vadlan }
@@ -1125,13 +1125,14 @@ jobs:
                       page = HPAGE;
                       show();
                   } else if (page == MBG || page == TBG) {
-                      page = HOME;
+                      page = bgBack;
+                      bgBack = HOME;
                       show();
                   } else if (page == ICON) {
                       page = HPAGE;
                       show();
                   } else if (page == MOCK) {
-                      page = BEHAVIOR;
+                      page = SETTINGS;
                       show();
                   } else {
                       page = SETTINGS;
@@ -1350,6 +1351,11 @@ jobs:
 
               // 1 = normal boxes; below 1 = boxes built meanwhile are a little fainter
               float boxFade = 1f;
+
+              // open / closed state of the groups inside the settings pages (kept when a page is rebuilt)
+              final Map<String, Boolean> accState = new HashMap<>();
+              // page the menu-color / top-frame-color pages go back to
+              int bgBack = HOME;
 
               class Glass extends Drawable {
                   float fade = 1f;
@@ -1772,10 +1778,16 @@ jobs:
               // a boxed on/off option that flips its own circle when tapped
               View toggleRow(int dot, String sym, String title, String sub, final String key,
                              final boolean def, int fg) {
+                  return toggleRowThen(dot, sym, title, sub, key, def, fg, null);
+              }
+
+              View toggleRowThen(int dot, String sym, String title, String sub, final String key,
+                                 final boolean def, int fg, final Runnable after) {
                   View r = row(dot, sym, title, sub, sp.getBoolean(key, def) ? 3 : 2, fg, null);
                   r.setOnClickListener(v -> {
                       boolean on = !sp.getBoolean(key, def);
                       sp.edit().putBoolean(key, on).apply();
+                      if (after != null) { after.run(); return; }
                       ViewGroup g = (ViewGroup) v;
                       g.removeViewAt(g.getChildCount() - 1);
                       g.addView(indView(on ? 3 : 2));
@@ -1783,6 +1795,72 @@ jobs:
                   return r;
               }
 
+              // goes to the menu-color / top-frame-color page (from the settings page or from the floating window)
+              void goBgPage(int p, AlertDialog[] dlg) {
+                  bgBack = dlg == null ? SETTINGS : HOME;
+                  page = p;
+                  if (dlg != null && dlg[0] != null) dlg[0].dismiss();
+                  else show();
+              }
+
+              // toolbar settings: counters, icons placement / size / color, menu color, frame ...
+              // used inside the main settings page (dlg == null) and in the window that opens by holding the hamburger
+              LinearLayout toolbarContent(final int fg, final AlertDialog[] dlg) {
+                  LinearLayout box = new LinearLayout(this);
+                  box.setOrientation(LinearLayout.VERTICAL);
+                  final int dszF = sp.getInt("home_btn_sz", 40);
+                  // counters settings
+                  box.addView(accordionGroup(0xFF26A69A, "🔢", t("کادرهای شمارش پوشه و آیکون", "Folder and icon counters"), fg,
+                          countersContent(fg)));
+                  // placement of the two icons: first lever = horizontal, second = vertical
+                  box.addView(accordionGroupFaded(0xFF00ACC1, "↔", t("جای‌گیری آیکون‌ها", "Icons placement"), fg, 0.6f, () -> new View[]{
+                          accordionGroup(0xFF5C6BC0, "☰", t("همبرگری", "Hamburger"), fg,
+                                  slider(t("جابجایی طولی", "Horizontal move"), "hamX", -100, 100, 0, " dp", fg, null),
+                                  slider(t("جابجایی عرضی", "Vertical move"), "hamY", -30, 30, 0, " dp", fg, null)),
+                          accordionGroup(0xFFFF7043, "+", t("بعلاوه", "Plus"), fg,
+                                  slider(t("جابجایی طولی", "Horizontal move"), "plusX", -100, 100, 0, " dp", fg, null),
+                                  slider(t("جابجایی عرضی", "Vertical move"), "plusY", -30, 30, 0, " dp", fg, null))}));
+                  // size of the two icons: first lever = vertical, second = horizontal
+                  box.addView(accordionGroupFaded(0xFF2196F3, "📐", t("سایز", "Size"), fg, 0.6f, () -> new View[]{
+                          accordionGroup(0xFF5C6BC0, "☰", t("سایز آیکون همبرگری", "Hamburger icon size"), fg,
+                                  slider(t("سایز عمودی", "Vertical size"), "hamH", 24, 120, dszF, " dp", fg, null),
+                                  slider(t("سایز افقی", "Horizontal size"), "hamW", 24, 120, dszF, " dp", fg, null)),
+                          accordionGroup(0xFFFF7043, "+", t("سایز آیکون بعلاوه", "Plus icon size"), fg,
+                                  slider(t("سایز عمودی", "Vertical size"), "plusH", 24, 120, dszF, " dp", fg, null),
+                                  slider(t("سایز افقی", "Horizontal size"), "plusW", 24, 120, dszF, " dp", fg, null))}));
+                  box.addView(accordionGroupFaded(0xFFE91E63, "🎨", t("رنگ", "Color"), fg, 0.6f, () -> new View[]{
+                          row(0xFFE91E63, "🖌", t("رنگ و شفافیت آیکون‌ها", "Icons color and transparency"), null, 0, fg,
+                                  w -> prefColorDialog("top_ic", fgc, t("رنگ آیکون‌ها", "Icons color"))),
+                          row(0xFFAB47BC, "🖌", t("رنگ و شفافیت پس‌زمینه آیکون‌ها", "Icons background color and transparency"),
+                                  null, 0, fg,
+                                  w -> prefColorDialog("top_ibg", light() ? 0x22000000 : 0x33FFFFFF,
+                                          t("رنگ پس‌زمینه آیکون‌ها", "Icons background color")))}));
+                  // menu color: color, transparency and picture of the settings (sliding) pages
+                  box.addView(row(0xFF9C27B0, "🖌", t("رنگ منو", "Menu color"), null, 0, fg, x -> goBgPage(MBG, dlg)));
+                  // the glass option changes the settings page itself, so the page is rebuilt right away
+                  Runnable again = null;
+                  if (dlg == null) again = () -> show();
+                  box.addView(toggleRowThen(0xFF26C6DA, "◇", t("کادر شیشه‌ای", "Glass boxes"),
+                          t("کادرهای تنظیمات شیشه‌ای با بلور بسیار کم می‌شوند", "Settings boxes look like glass with a very light blur"),
+                          "glass", false, fg, again));
+                  box.addView(toggleRow(0xFFEF5350, "◻", t("شکل آیکون‌های سربرگ", "Header icons shape"),
+                          t("آیکون‌ها بدون دایره و داخل کادر مثل کادر شمارش", "Icons sit in boxes like the counters, not circles"),
+                          "topIconBox", false, fg));
+                  box.addView(toggleRow(0xFF78909C, "▭", t("خط کادر", "Box line"), null, "topLine", false, fg));
+                  box.addView(toggleRow(0xFF7E57C2, "▣", t("کادر تنظیمات", "Settings frame"),
+                          t("کادری دور آیکون‌ها و کادرهای شمارش", "A frame around the icons and the counters"),
+                          "topBoxOn", false, fg));
+                  // color, transparency, picture and color code of the frame at the top of the home page
+                  box.addView(row(0xFFFF7043, "🖌", t("رنگ کادر تنظیمات", "Settings frame color"),
+                          t("رنگ، شفافیت، عکس و کد رنگ کادر بالای صفحه", "Color, transparency, picture and color code of the top frame"),
+                          0, fg, x -> goBgPage(TBG, dlg)));
+                  box.addView(accordionGroup(0xFF8BC34A, "📏", t("سایز کادر بالا", "Top frame size"), fg,
+                          slider(t("طول", "Length"), "topBoxW", 40, 100, 100, "%", fg, null),
+                          slider(t("عرض", "Width"), "topBoxH", 44, 120, 56, " dp", fg, null)));
+                  return box;
+              }
+
+              // window that opens by holding the hamburger on the home page
               void topBtnMenu() {
                   final AlertDialog[] dlg = new AlertDialog[1];
                   ScrollView sv = new ScrollView(this);
@@ -1790,61 +1868,7 @@ jobs:
                   LinearLayout box = new LinearLayout(this);
                   box.setOrientation(LinearLayout.VERTICAL);
                   box.setPadding(dp(16), dp(8), dp(16), dp(8));
-                  int dsz = sp.getInt("home_btn_sz", 40);
-                  // counters settings (same window that used to open by touching the counters)
-                  box.addView(row(0xFF26A69A, "🔢", t("کادرهای شمارش", "Counter boxes"), null, 0, DLG, x -> {
-                      if (dlg[0] != null) dlg[0].dismiss();
-                      boxMenu();
-                  }));
-                  // placement of the two icons: first lever = horizontal, second = vertical
-                  box.addView(accordionGroupFaded(0xFF00ACC1, "↔", t("جای‌گیری آیکون‌ها", "Icons placement"), DLG, 0.6f, () -> new View[]{
-                          accordionGroup(0xFF5C6BC0, "☰", t("همبرگری", "Hamburger"), DLG,
-                                  slider(t("جابجایی طولی", "Horizontal move"), "hamX", -100, 100, 0, " dp", DLG, null),
-                                  slider(t("جابجایی عرضی", "Vertical move"), "hamY", -30, 30, 0, " dp", DLG, null)),
-                          accordionGroup(0xFFFF7043, "+", t("بعلاوه", "Plus"), DLG,
-                                  slider(t("جابجایی طولی", "Horizontal move"), "plusX", -100, 100, 0, " dp", DLG, null),
-                                  slider(t("جابجایی عرضی", "Vertical move"), "plusY", -30, 30, 0, " dp", DLG, null))}));
-                  // size of the two icons: first lever = vertical, second = horizontal
-                  final int dszF = dsz;
-                  box.addView(accordionGroupFaded(0xFF2196F3, "📐", t("سایز", "Size"), DLG, 0.6f, () -> new View[]{
-                          accordionGroup(0xFF5C6BC0, "☰", t("سایز آیکون همبرگری", "Hamburger icon size"), DLG,
-                                  slider(t("سایز عمودی", "Vertical size"), "hamH", 24, 120, dszF, " dp", DLG, null),
-                                  slider(t("سایز افقی", "Horizontal size"), "hamW", 24, 120, dszF, " dp", DLG, null)),
-                          accordionGroup(0xFFFF7043, "+", t("سایز آیکون بعلاوه", "Plus icon size"), DLG,
-                                  slider(t("سایز عمودی", "Vertical size"), "plusH", 24, 120, dszF, " dp", DLG, null),
-                                  slider(t("سایز افقی", "Horizontal size"), "plusW", 24, 120, dszF, " dp", DLG, null))}));
-                  box.addView(accordionGroupFaded(0xFFE91E63, "🎨", t("رنگ", "Color"), DLG, 0.6f, () -> new View[]{
-                          row(0xFFE91E63, "🖌", t("رنگ و شفافیت آیکون‌ها", "Icons color and transparency"), null, 0, DLG,
-                                  w -> prefColorDialog("top_ic", fgc, t("رنگ آیکون‌ها", "Icons color"))),
-                          row(0xFFAB47BC, "🖌", t("رنگ و شفافیت پس‌زمینه آیکون‌ها", "Icons background color and transparency"),
-                                  null, 0, DLG,
-                                  w -> prefColorDialog("top_ibg", light() ? 0x22000000 : 0x33FFFFFF,
-                                          t("رنگ پس‌زمینه آیکون‌ها", "Icons background color")))}));
-                  // menu color: color, transparency and picture of the settings (sliding) pages
-                  box.addView(row(0xFF9C27B0, "🖌", t("رنگ منو", "Menu color"), null, 0, DLG, x -> {
-                      page = MBG;
-                      if (dlg[0] != null) dlg[0].dismiss();
-                  }));
-                  box.addView(toggleRow(0xFF26C6DA, "◇", t("کادر شیشه‌ای", "Glass boxes"),
-                          t("کادرهای تنظیمات شیشه‌ای با بلور بسیار کم می‌شوند", "Settings boxes look like glass with a very light blur"),
-                          "glass", false, DLG));
-                  box.addView(toggleRow(0xFFEF5350, "◻", t("شکل آیکون‌های سربرگ", "Header icons shape"),
-                          t("آیکون‌ها بدون دایره و داخل کادر مثل کادر شمارش", "Icons sit in boxes like the counters, not circles"),
-                          "topIconBox", false, DLG));
-                  box.addView(toggleRow(0xFF78909C, "▭", t("خط کادر", "Box line"), null, "topLine", false, DLG));
-                  box.addView(toggleRow(0xFF7E57C2, "▣", t("کادر تنظیمات", "Settings frame"),
-                          t("کادری دور آیکون‌ها و کادرهای شمارش", "A frame around the icons and the counters"),
-                          "topBoxOn", false, DLG));
-                  // color, transparency, picture and color code of the frame at the top of the home page
-                  box.addView(row(0xFFFF7043, "🖌", t("رنگ کادر تنظیمات", "Settings frame color"),
-                          t("رنگ، شفافیت، عکس و کد رنگ کادر بالای صفحه", "Color, transparency, picture and color code of the top frame"),
-                          0, DLG, x -> {
-                      page = TBG;
-                      if (dlg[0] != null) dlg[0].dismiss();
-                  }));
-                  box.addView(accordionGroup(0xFF8BC34A, "📏", t("سایز کادر بالا", "Top frame size"), DLG,
-                          slider(t("طول", "Length"), "topBoxW", 40, 100, 100, "%", DLG, null),
-                          slider(t("عرض", "Width"), "topBoxH", 44, 120, 56, " dp", DLG, null)));
+                  box.addView(toolbarContent(DLG, dlg));
                   sv.addView(box);
                   dlg[0] = new AlertDialog.Builder(this).setTitle(t("تنظیمات آیکون‌های بالا", "Top icons settings")).setView(sv)
                           .setPositiveButton(t("تأیید", "OK"), null)
@@ -1954,9 +1978,13 @@ jobs:
                   final LinearLayout box = new LinearLayout(this);
                   box.setOrientation(LinearLayout.VERTICAL);
                   for (View it : items) box.addView(it);
-                  box.setVisibility(View.GONE);
-                  wrapper.addView(row(dot, sym, title, null, 0, fg, x ->
-                          box.setVisibility(box.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE)));
+                  final String ak = page + "|" + title;
+                  box.setVisibility(Boolean.TRUE.equals(accState.get(ak)) ? View.VISIBLE : View.GONE);
+                  wrapper.addView(row(dot, sym, title, null, 0, fg, x -> {
+                      boolean now = box.getVisibility() != View.VISIBLE;
+                      box.setVisibility(now ? View.VISIBLE : View.GONE);
+                      accState.put(ak, now);
+                  }));
                   wrapper.addView(box);
                   return wrapper;
               }
@@ -2515,24 +2543,33 @@ jobs:
                   });
               }
 
+              // counters settings (folder and icon counters)
+              LinearLayout countersContent(int fg) {
+                  LinearLayout box = new LinearLayout(this);
+                  box.setOrientation(LinearLayout.VERTICAL);
+                  // placement of the two counters together: first lever = horizontal, second = vertical
+                  box.addView(accordionGroup(0xFF00ACC1, "↔", t("جای‌گیری", "Placement"), fg,
+                          slider(t("جابجایی طولی", "Horizontal move"), "box_px", -100, 100, 0, " dp", fg, null),
+                          slider(t("جابجایی عرضی", "Vertical move"), "box_py", -30, 30, 0, " dp", fg, null)));
+                  box.addView(accordionRow(0xFF2196F3, "📐", t("عرض کادرها", "Boxes width"), "box_w", 40, 140, 62, " dp", fg, null));
+                  box.addView(accordionRow(0xFF2196F3, "📐", t("ارتفاع کادرها", "Boxes height"), "box_h", 28, 80, 40, " dp", fg, null));
+                  box.addView(accordionRow(0xFF4CAF50, "🔤", t("اندازه اعداد", "Numbers size"), "box_ts", 10, 40, 18, " sp", fg, null));
+                  box.addView(accordionRow(0xFFFF9800, "⚖", t("کلفتی اعداد (۰ تا ۳)", "Numbers weight (0 to 3)"), "box_tw", 0, 3, 3, "", fg, null));
+                  box.addView(row(0xFFE91E63, "🎨", t("رنگ و شفافیت کادرها", "Boxes color and transparency"), null, 0, fg,
+                          w -> prefColorDialog("box_bg", 0x33FFFFFF, t("رنگ کادرها", "Boxes color"))));
+                  box.addView(row(0xFF9C27B0, "🔤", t("رنگ اعداد", "Numbers color"), null, 0, fg,
+                          w -> prefColorDialog("box_tc", fgc, t("رنگ اعداد", "Numbers color"))));
+                  return box;
+              }
+
+              // window that opens by holding the counters on the home page
               void boxMenu() {
                   ScrollView sv = new ScrollView(this);
                   sv.setVerticalScrollBarEnabled(false);
                   LinearLayout box = new LinearLayout(this);
                   box.setOrientation(LinearLayout.VERTICAL);
                   box.setPadding(dp(16), dp(8), dp(16), dp(8));
-                  // placement of the two counters together: first lever = horizontal, second = vertical
-                  box.addView(accordionGroup(0xFF00ACC1, "↔", t("جای‌گیری", "Placement"), DLG,
-                          slider(t("جابجایی طولی", "Horizontal move"), "box_px", -100, 100, 0, " dp", DLG, null),
-                          slider(t("جابجایی عرضی", "Vertical move"), "box_py", -30, 30, 0, " dp", DLG, null)));
-                  box.addView(accordionRow(0xFF2196F3, "📐", t("عرض کادرها", "Boxes width"), "box_w", 40, 140, 62, " dp", DLG, null));
-                  box.addView(accordionRow(0xFF2196F3, "📐", t("ارتفاع کادرها", "Boxes height"), "box_h", 28, 80, 40, " dp", DLG, null));
-                  box.addView(accordionRow(0xFF4CAF50, "🔤", t("اندازه اعداد", "Numbers size"), "box_ts", 10, 40, 18, " sp", DLG, null));
-                  box.addView(accordionRow(0xFFFF9800, "⚖", t("کلفتی اعداد (۰ تا ۳)", "Numbers weight (0 to 3)"), "box_tw", 0, 3, 3, "", DLG, null));
-                  box.addView(row(0xFFE91E63, "🎨", t("رنگ و شفافیت کادرها", "Boxes color and transparency"), null, 0, DLG,
-                          w -> prefColorDialog("box_bg", 0x33FFFFFF, t("رنگ کادرها", "Boxes color"))));
-                  box.addView(row(0xFF9C27B0, "🔤", t("رنگ اعداد", "Numbers color"), null, 0, DLG,
-                          w -> prefColorDialog("box_tc", fgc, t("رنگ اعداد", "Numbers color"))));
+                  box.addView(countersContent(DLG));
                   sv.addView(box);
                   new AlertDialog.Builder(this).setTitle(t("تنظیمات کادرها", "Boxes settings")).setView(sv)
                           .setPositiveButton(t("تأیید", "OK"), null)
@@ -3754,7 +3791,7 @@ jobs:
                       show();
                   }));
                   final boolean fnDock = sp.getBoolean("fpNameDock", true);
-                  sb.addView(row(0xFF5C6BC0, "⚓", t("نام پوشه دوک", "Dock folder name"), null, fnDock ? 3 : 2, fg, w -> {
+                  sb.addView(row(0xFF5C6BC0, "⚓", t("نام پوشه داک", "Dock folder name"), null, fnDock ? 3 : 2, fg, w -> {
                       sp.edit().putBoolean("fpNameDock", !fnDock).apply();
                       show();
                   }));
@@ -4484,8 +4521,8 @@ jobs:
                       l.add(entry);
                       changed = true;
                   }
-                  if (already) Toast.makeText(this, t("قبلاً در دوک هست", "Already in the dock"), Toast.LENGTH_SHORT).show();
-                  if (full) Toast.makeText(this, t("این صفحه دوک پر است", "This dock page is full"), Toast.LENGTH_SHORT).show();
+                  if (already) Toast.makeText(this, t("قبلاً در داک هست", "Already in the dock"), Toast.LENGTH_SHORT).show();
+                  if (full) Toast.makeText(this, t("این صفحه داک پر است", "This dock page is full"), Toast.LENGTH_SHORT).show();
                   if (!changed) {
                       dragKeys.clear();
                       dragFromDock = false;
@@ -4639,32 +4676,36 @@ jobs:
                   try { ver = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Throwable e) { }
                   TextView tv = new TextView(this);
                   tv.setText(t("نسخه ", "Version ") + ver);
-                  tv.setTextSize(11);
+                  tv.setTextSize(15);
+                  tv.setTypeface(null, Typeface.BOLD);
                   tv.setGravity(Gravity.CENTER);
                   tv.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
                   int base = menuAvg();
                   boolean lt = isLight(base);
-                  tv.setTextColor(verMix(base, 0xFF000000, lt ? 0.30f : 0.55f));
-                  tv.setShadowLayer(1.2f, 0f, dp(1) * 1.2f, verMix(base, 0xFFFFFFFF, lt ? 0.75f : 0.22f));
+                  // clear text with a carved edge: dark text and a light edge on light pages, light text and a dark edge on dark pages
+                  tv.setTextColor(verMix(base, lt ? 0xFF000000 : 0xFFFFFFFF, 0.72f));
+                  tv.setShadowLayer(1.5f, 0f, lt ? dp(1) : -dp(1), verMix(base, lt ? 0xFFFFFFFF : 0xFF000000, 0.85f));
                   LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
                   lp.setMargins(0, dp(28), 0, dp(16));
                   tv.setLayoutParams(lp);
                   return tv;
               }
 
-              View settingsPage(int fg) {
+              View settingsPage(final int fg) {
                   LinearLayout r = vbox();
                   r.addView(topBar(t("تنظیمات", "Settings"), fg));
-                  r.addView(row(0xFF00ACC1, "☰", t("کار بالا", "Top bar"), null, 0, fg,
-                          v -> topBtnMenu()));
+                  // toolbar settings open right here, inside this page
+                  r.addView(accordionGroup(0xFF00ACC1, "☰", t("نوار ابزار", "Toolbar"), fg, toolbarContent(fg, null)));
                   r.addView(row(0xFF5E35B1, "🏠", t("صفحه خانگی", "Home Page"), null, 0, fg,
                           v -> { page = HPAGE; show(); }));
                   r.addView(row(0xFF5C6BC0, "🎨", t("پس‌زمینه", "Background"), null, 0, fg,
                           v -> { page = BG; show(); }));
                   r.addView(row(0xFFFF9800, "🚀", t("رفتار", "Behavior"), null, 0, fg,
                           v -> { page = BEHAVIOR; show(); }));
-                  r.addView(row(0xFF29B6F6, "⚓", t("دوک", "Dock"), null, 0, fg,
+                  r.addView(row(0xFF29B6F6, "⚓", t("داک", "Dock"), null, 0, fg,
                           v -> { page = DOCK; show(); }));
+                  r.addView(row(0xFFFF5722, "🔮", t("ماک (حباب شناور)", "Mock (Floating Bubble)"), null, 0, fg,
+                          v -> { page = MOCK; show(); }));
                   r.addView(row(0xFF8D6E63, "📁", t("تنظیمات پوشه", "Folder Settings"), null, 0, fg,
                           v -> { page = FOLDER; show(); }));
                   r.addView(row(0xFF3F51B5, "Aa", t("فونت", "Font"), null, 0, fg,
@@ -4679,7 +4720,7 @@ jobs:
               }
 
               // ---------- home page: frame, frame background, icon ----------
-              View homeSetPage(int fg) {
+              View homeSetPage(final int fg) {
                   LinearLayout r = vbox();
                   r.addView(topBar(t("صفحه خانگی", "Home Page"), fg));
                   final boolean on = sp.getBoolean("hfOn", false);
@@ -4692,8 +4733,8 @@ jobs:
                   r.addView(row(0xFFFF7043, "🖼", t("پس‌زمینه کادر", "Frame background"),
                           t("رنگ، شفافیت و عکس کادر", "Color, transparency and picture of the frame"), 0, fg,
                           v -> { page = HFBG; show(); }));
-                  r.addView(row(0xFFAB47BC, "🧩", t("آیکون", "Icon"), null, 0, fg,
-                          v -> { page = ICON; show(); }));
+                  // icon settings open right here, in lighter glass boxes
+                  r.addView(accordionGroupFaded(0xFFAB47BC, "🧩", t("آیکون", "Icon"), fg, 0.6f, () -> iconItems(fg)));
                   return wrapScroll(r);
               }
 
@@ -5030,9 +5071,9 @@ jobs:
               // dock background: same tools as the background page (colors, picker, opacity, hex code)
               View dockBgPage(final int fg) {
                   LinearLayout p = vbox();
-                  p.addView(topBar(t("پس‌زمینه دوک", "Dock background"), fg));
+                  p.addView(topBar(t("پس‌زمینه داک", "Dock background"), fg));
 
-                  p.addView(labelBox(t("رنگ پس‌زمینه دوک:", "Dock color:"), fg));
+                  p.addView(labelBox(t("رنگ پس‌زمینه داک:", "Dock color:"), fg));
                   HorizontalScrollView hs = new HorizontalScrollView(this);
                   hs.setHorizontalScrollBarEnabled(false);
                   LinearLayout r = new LinearLayout(this);
@@ -5084,7 +5125,7 @@ jobs:
                   show();
               }
 
-              View behaviorPage(int fg) {
+              View behaviorPage(final int fg) {
                   LinearLayout r = vbox();
                   r.addView(topBar(t("رفتار", "Behavior"), fg));
                   // apps open inside the launcher as a window: over the home frame only, over top frame + home frame + dock, or full screen
@@ -5093,28 +5134,28 @@ jobs:
                                   t("برنامه‌ها داخل لانچر و به اندازه کادر آیکون‌های صفحه خانگی باز می‌شوند (نیاز به پنجره آزاد / Freeform در گوشی)",
                                           "Apps open inside the launcher, as big as the home icons frame (needs free-form windows on the phone)"),
                                   "hfRun", false, fg),
-                          toggleRow(0xFF00897B, "▤", t("کادر بالا و دوک", "Top frame and dock"),
-                                  t("برنامه‌ها به اندازه مجموع کادر بالا، کادر آیکون‌های صفحه خانگی و کادر دوک باز می‌شوند",
+                          toggleRow(0xFF00897B, "▤", t("کادر بالا و داک", "Top frame and dock"),
+                                  t("برنامه‌ها به اندازه مجموع کادر بالا، کادر آیکون‌های صفحه خانگی و کادر داک باز می‌شوند",
                                           "Apps open as big as the top frame, the home icons frame and the dock together"),
                                   "hfRunAll", false, fg),
                           toggleRow(0xFFEF6C00, "▥", t("تمام صفحه", "Full screen"),
                                   t("برنامه‌ها به اندازه کل صفحه نمایش، از زیر نوار اعلان اندروید تا بالای نوار پیمایش پایین، باز می‌شوند (نیاز به پنجره آزاد / Freeform در گوشی)",
                                           "Apps open as big as the whole display, from below the Android status bar to above the navigation bar (needs free-form windows on the phone)"),
                                   "hfRunFull", false, fg)}));
-                  int m = sp.getInt("mode", 0);
-                  r.addView(row(0xFF43A047, "🚪", t("رفتن لانچر", "Launcher Goes"),
-                          t("با انتخاب برنامه، لانچر بسته می‌شود", "Launcher closes when you open an app"),
-                          m == 0 ? 1 : 0, fg, v -> { sp.edit().putInt("mode", 0).commit(); show(); }));
-                  r.addView(row(0xFF1E88E5, "📌", t("ماندن لانچر", "Launcher Stays"),
-                          t("لانچر بسته نمی‌شود و هنگام برگشت پشت برنامه باز می‌ماند",
-                                  "Launcher stays open behind the app"),
-                          m == 1 ? 1 : 0, fg, v -> { sp.edit().putInt("mode", 1).commit(); show(); }));
-                  r.addView(row(0xFFE53935, "🛑", t("بستن کامل", "Full Close"),
-                          t("پس از اجرای برنامه، فرآیند لانچر از پس‌زمینه و حافظه رم کاملاً خارج می‌شود",
-                                  "Terminates the launcher process completely upon app launch"),
-                          m == 2 ? 1 : 0, fg, v -> { sp.edit().putInt("mode", 2).commit(); show(); }));
-                  r.addView(row(0xFFFF5722, "🔮", t("ماک (حباب شناور)", "Mock (Floating Bubble)"), null, 0, fg,
-                          v -> { page = MOCK; show(); }));
+                  // what the launcher does when an app opens (lighter glass boxes)
+                  final int m = sp.getInt("mode", 0);
+                  r.addView(accordionGroupFaded(0xFF1E88E5, "🚀", t("رفتار لانچر", "Launcher behavior"), fg, 0.6f, () -> new View[]{
+                          row(0xFF43A047, "🚪", t("رفتن لانچر", "Launcher Goes"),
+                                  t("با انتخاب برنامه، لانچر بسته می‌شود", "Launcher closes when you open an app"),
+                                  m == 0 ? 1 : 0, fg, v -> { sp.edit().putInt("mode", 0).commit(); show(); }),
+                          row(0xFF1E88E5, "📌", t("ماندن لانچر", "Launcher Stays"),
+                                  t("لانچر بسته نمی‌شود و هنگام برگشت پشت برنامه باز می‌ماند",
+                                          "Launcher stays open behind the app"),
+                                  m == 1 ? 1 : 0, fg, v -> { sp.edit().putInt("mode", 1).commit(); show(); }),
+                          row(0xFFE53935, "🛑", t("بستن لانچر", "Close Launcher"),
+                                  t("پس از اجرای برنامه، فرآیند لانچر از پس‌زمینه و حافظه رم کاملاً خارج می‌شود",
+                                          "Terminates the launcher process completely upon app launch"),
+                                  m == 2 ? 1 : 0, fg, v -> { sp.edit().putInt("mode", 2).commit(); show(); })}));
                   r.addView(row(0xFF26A69A, "⚡", t("میانبر", "Shortcut"),
                           t("افزودن کلید Vad به پنل تنظیمات سریع", "Add the Vad button to Quick Settings"),
                           sp.getBoolean("tile", false) ? 3 : 2, fg,
@@ -5124,58 +5165,64 @@ jobs:
 
               View dockPageView(int fg) {
                   LinearLayout r = vbox();
-                  r.addView(topBar(t("دوک", "Dock"), fg));
+                  r.addView(topBar(t("داک", "Dock"), fg));
 
                   boolean on1 = sp.getBoolean("dockOn1", true);
                   r.addView(row(0xFF8E24AA, "👁", t("نمایش", "Show"), null, on1 ? 3 : 2, fg,
                           v -> { sp.edit().putBoolean("dockOn1", !on1).apply(); show(); }));
-                  r.addView(row(0xFF5C6BC0, "🎨", t("پس‌زمینه دوک", "Dock background"), null, 0, fg,
+                  r.addView(row(0xFF5C6BC0, "🎨", t("پس‌زمینه داک", "Dock background"), null, 0, fg,
                           v -> { page = DOCKBG; show(); }));
                   r.addView(accordionRow(0xFF2196F3, "🔢", t("تعداد اپلیکیشن", "Apps count"), "dockCount1", 4, 10, 4, "", fg, null));
                   r.addView(accordionRow(0xFF4CAF50, "📄", t("تعداد صفحه", "Pages count"), "dockPages1", 1, 5, 1, "", fg, null));
-                  r.addView(accordionRow(0xFFFF9800, "📐", t("ارتفاع دوک", "Dock height"), "dockH1", 56, 140, 90, " dp", fg, null));
-                  r.addView(accordionRow(0xFF9C27B0, "↔", t("عرض دوک", "Dock width"), "dockW1", 60, 100, 96, "%", fg, null));
+                  r.addView(accordionRow(0xFFFF9800, "📐", t("ارتفاع داک", "Dock height"), "dockH1", 56, 140, 90, " dp", fg, null));
+                  r.addView(accordionRow(0xFF9C27B0, "↔", t("عرض داک", "Dock width"), "dockW1", 60, 100, 96, "%", fg, null));
                   // icon: name on/off, icon size, icon name size (glass boxes, a little fainter)
                   r.addView(accordionGroupFaded(0xFF00CCD6, "📱", t("آیکون", "Icon"), fg, 0.6f, () -> new View[]{
                           toggleRow(0xFF7E57C2, "🏷", t("اسم آیکون", "Icon name"),
-                                  t("با فعال بودن، نام آیکون‌ها در دوک حذف می‌شود", "When on, app names in the dock are hidden"),
+                                  t("با فعال بودن، نام آیکون‌ها در داک حذف می‌شود", "When on, app names in the dock are hidden"),
                                   "hideDockNames", false, fg),
                           accordionRow(0xFF00CCD6, "📱", t("سایز آیکون", "Icon size"), "dockI1", 24, 64, 52, " dp", fg, null),
                           accordionRow(0xFFFFB300, "🔤", t("سایز اسم آیکون", "Icon name size"), "dockTs1", 6, 20, 10, " sp", fg, null)}));
                   r.addView(accordionRow(0xFF26C6DA, "🔲", t("لبه‌ها", "Edges"), "dockRound", 0, 100, 20, "", fg, null));
 
                   int pos = sp.getInt("dockPos1", 0);
-                  r.addView(row(0xFF29B6F6, "⬇", t("مکان دوک: پایین", "Dock position: Bottom"), null, pos == 0 ? 1 : 0, fg,
+                  r.addView(row(0xFF29B6F6, "⬇", t("مکان داک: پایین", "Dock position: Bottom"), null, pos == 0 ? 1 : 0, fg,
                           v -> { sp.edit().putInt("dockPos1", 0).apply(); show(); }));
-                  r.addView(row(0xFF66BB6A, "⬆", t("مکان دوک: بالا", "Dock position: Top"), null, pos == 1 ? 1 : 0, fg,
+                  r.addView(row(0xFF66BB6A, "⬆", t("مکان داک: بالا", "Dock position: Top"), null, pos == 1 ? 1 : 0, fg,
                           v -> { sp.edit().putInt("dockPos1", 1).apply(); show(); }));
 
                   return wrapScroll(r);
               }
 
-              View iconPage(int fg) {
-                  LinearLayout r = vbox();
-                  r.addView(topBar(t("آیکون و نوار بالا", "Icon & Top Bar"), fg));
-                  r.addView(accordionRow(0xFF2196F3, "📱", t("سایز آیکون", "Icon size"), "iconSz", 32, 96, 56, " dp", fg, null));
-                  r.addView(accordionRow(0xFF26A69A, "🔤", t("سایز اسم آیکون", "Icon name size"), "nameSz", 6, 20, 12, " sp", fg, null));
+              // icon settings (shared by the icon page and the group inside the home page)
+              View[] iconItems(final int fg) {
+                  List<View> l = new ArrayList<>();
+                  l.add(accordionRow(0xFF2196F3, "📱", t("سایز آیکون", "Icon size"), "iconSz", 32, 96, 56, " dp", fg, null));
+                  l.add(accordionRow(0xFF26A69A, "🔤", t("سایز اسم آیکون", "Icon name size"), "nameSz", 6, 20, 12, " sp", fg, null));
 
                   final boolean sync = sp.getBoolean("folderSync", false);
-                  r.addView(row(0xFF66BB6A, "🔗", t("سایز پوشه هماهنگ", "Synced folder size"),
-                          t("اندازه پوشه‌ها در دوک و صفحه اصلی برابر آیکون برنامه‌ها می‌شود",
+                  l.add(row(0xFF66BB6A, "🔗", t("سایز پوشه هماهنگ", "Synced folder size"),
+                          t("اندازه پوشه‌ها در داک و صفحه اصلی برابر آیکون برنامه‌ها می‌شود",
                                   "Folders everywhere match the app icon size"),
                           sync ? 3 : 2, fg,
                           v -> { sp.edit().putBoolean("folderSync", !sync).apply(); show(); }));
 
-                  r.addView(accordionRow(0xFF9C27B0, "↔", t("تعداد ستون‌ها", "Columns count"), "gridCols", 4, 20, 4, "", fg, null));
-                  // the first row stays where it is; only the gap between the rows below it changes
-                  r.addView(accordionRow(0xFF607D8B, "↕", t("فاصله افقی", "Horizontal spacing"), "gridGap", -3, 7, 0, " mm", fg, null));
+                  l.add(accordionRow(0xFF9C27B0, "↔", t("تعداد ستون‌ها", "Columns count"), "gridCols", 4, 20, 4, "", fg, null));
+                  // the first row follows the row spacing too
+                  l.add(accordionRow(0xFF607D8B, "↕", t("فاصله افقی", "Horizontal spacing"), "gridGap", -3, 7, 0, " mm", fg, null));
 
                   final boolean hide = sp.getBoolean("hideNames", false);
-                  r.addView(row(0xFFAB47BC, "🏷", t("حذف نام برنامه", "Hide app names"),
+                  l.add(row(0xFFAB47BC, "🏷", t("حذف نام برنامه", "Hide app names"),
                           t("نام آیکون‌ها و پوشه‌ها در صفحه اصلی حذف می‌شود", "Hides names under icons and folders"),
                           hide ? 3 : 2, fg,
                           v -> { sp.edit().putBoolean("hideNames", !hide).apply(); show(); }));
+                  return l.toArray(new View[0]);
+              }
 
+              View iconPage(int fg) {
+                  LinearLayout r = vbox();
+                  r.addView(topBar(t("آیکون و نوار بالا", "Icon & Top Bar"), fg));
+                  for (View v : iconItems(fg)) r.addView(v);
                   return wrapScroll(r);
               }
 
