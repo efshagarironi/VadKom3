@@ -96,9 +96,9 @@ jobs:
                   applicationId "com.vadlan"
                   minSdk 26
                   targetSdk 34
-                  // grows with every GitHub build, so Android always accepts it as an update
-                  versionCode 1000 + ((System.getenv('GITHUB_RUN_NUMBER') ?: '1') as int)
-                  versionName "29.0"
+                  // minutes since 1970: always bigger than the previous build, so Android never sees it as a downgrade
+                  versionCode (int) (System.currentTimeMillis() / 60000L)
+                  versionName "29.1"
               }
               buildTypes {
                   debug { signingConfig signingConfigs.vadlan }
