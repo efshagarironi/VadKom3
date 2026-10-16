@@ -98,7 +98,7 @@ jobs:
                   targetSdk 34
                   // minutes since 1970: always bigger than the previous build, so Android never sees it as a downgrade
                   versionCode System.currentTimeMillis().intdiv(60000L).intValue()
-                  versionName "30.0"
+                  versionName "31.0"
               }
               buildTypes {
                   debug { signingConfig signingConfigs.vadlan }
@@ -714,7 +714,7 @@ jobs:
           public class MainActivity extends Activity {
               static final int HOME = 0, SETTINGS = 1, BG = 2, BEHAVIOR = 3, LANG = 4, PICKER = 5,
                       DOCK = 6, ICON = 8, MOCK = 9, FOLDER = 10, BACKUP = 11, RESTORE = 12,
-                      FONT = 13, FGRP = 14, FPICK = 15, DOCKBG = 16, HPAGE = 17, HFBG = 18, MBG = 19, TBG = 20;
+                      FONT = 13, FGRP = 14, FPICK = 15, DOCKBG = 16, HPAGE = 17, HFBG = 18, MBG = 19, TBG = 20, TBAR = 21;
               static final int DLG = 0xFFEEEEEE;
               static final int REQ_IMG = 77, REQ_FIMG = 78, REQ_MIMG = 79, REQ_TIMG = 80;
 
@@ -1797,7 +1797,7 @@ jobs:
 
               // goes to the menu-color / top-frame-color page (from the settings page or from the floating window)
               void goBgPage(int p, AlertDialog[] dlg) {
-                  bgBack = dlg == null ? SETTINGS : HOME;
+                  bgBack = dlg == null ? TBAR : HOME;
                   page = p;
                   if (dlg != null && dlg[0] != null) dlg[0].dismiss();
                   else show();
@@ -1858,6 +1858,14 @@ jobs:
                           slider(t("طول", "Length"), "topBoxW", 40, 100, 100, "%", fg, null),
                           slider(t("عرض", "Width"), "topBoxH", 44, 120, 56, " dp", fg, null)));
                   return box;
+              }
+
+              // toolbar settings page (slides in like the home page settings)
+              View toolbarPage(final int fg) {
+                  LinearLayout r = vbox();
+                  r.addView(topBar(t("نوار ابزار", "Toolbar"), fg));
+                  r.addView(toolbarContent(fg, null));
+                  return wrapScroll(r);
               }
 
               // window that opens by holding the hamburger on the home page
@@ -2271,6 +2279,7 @@ jobs:
                   View v;
                   if (page == SETTINGS) v = settingsPage(fg);
                   else if (page == HPAGE) v = homeSetPage(fg);
+                  else if (page == TBAR) v = toolbarPage(fg);
                   else if (page == BG) v = bgPage(fg);
                   else if (page == HFBG) v = bgPageG(2, fg);
                   else if (page == MBG) v = bgPageG(1, fg);
@@ -2358,7 +2367,7 @@ jobs:
                       root.addView(tl, tll);
                       topLineV = tl;
                   }
-                  final boolean dockTop = sp.getInt("dockPos1", 0) == 1;
+                  final boolean dockTop = false;
                   LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(-1, -2);
                   dl.setMargins(0, dp(4), 0, dp(4));
 
@@ -2545,6 +2554,16 @@ jobs:
 
               // counters settings (folder and icon counters)
               LinearLayout countersContent(int fg) {
+                  float oldFade = boxFade;
+                  boxFade = 0.6f; // every box inside is a little fainter
+                  try {
+                      return countersBoxes(fg);
+                  } finally {
+                      boxFade = oldFade;
+                  }
+              }
+
+              LinearLayout countersBoxes(int fg) {
                   LinearLayout box = new LinearLayout(this);
                   box.setOrientation(LinearLayout.VERTICAL);
                   // placement of the two counters together: first lever = horizontal, second = vertical
@@ -2960,7 +2979,7 @@ jobs:
                   // the home page scrolls behind the dock and fades out there
                   // (with the home frame on, the page is cut to the rounded frame and fades at its top and bottom edge)
                   final boolean framed = sp.getBoolean("hfOn", false);
-                  final boolean fadeTop = sp.getInt("dockPos1", 0) == 1;
+                  final boolean fadeTop = false;
                   final int dres = framed ? 0 : dockReserve();
                   final int fadeLen = framed ? dp(24) : dp(40);
                   final int topFade = framed ? dp(10) : fadeLen;
@@ -3775,23 +3794,22 @@ jobs:
                   sb.addView(accordionRow(0xFF8BC34A, "📁", t("سایز پوشه بسته", "Closed folder size"), "folderSz", 32, 96, 56, " dp", fg, rs));
                   sb.addView(accordionRow(0xFF9C27B0, "💧", t("شفافیت پوشه", "Folder opacity"), "fpAlpha", 10, 100, 80, "%", fg, rs));
                   sb.addView(accordionRow(0xFF607D8B, "🌑", t("مات", "Fade"), "fpDim", 0, 98, 25, "%", fg, rs));
-                  sb.addView(accordionRow(0xFF7E57C2, "📷", t("بلور", "Blur"), "fpBlur", 0, 100, 0, "%", fg, rs));
-                  sb.addView(accordionRow(0xFF00CCD6, "📱", t("اندازه آیکون‌ها", "Icon size"), "fpIcon", 24, 72, 40, " dp", fg, rs));
+                  sb.addView(accordionRow(0xFF00CCD6, "📱", t("سایز آیکون", "Icon size"), "fpIcon", 24, 72, 40, " dp", fg, rs));
                   sb.addView(accordionGroup(0xFF8D6E63, "🔠", t("سایز متن", "Text size"), fg,
                           slider(t("بالای پوشه", "Folder top"), "fpTsTop", 8, 30, 14, " sp", fg, rs),
                           slider(t("پایین پوشه", "Folder bottom"), "fpTsBot", 6, 24, 12, " sp", fg, rs)));
                   final boolean nmOn = sp.getInt("fpNames", 1) == 1;
-                  sb.addView(row(0xFF42A5F5, "🏷", t("نام آیکون‌ها", "Icon names"), null, nmOn ? 3 : 2, fg, w -> {
+                  sb.addView(row(0xFF42A5F5, "🏷", t("آیکون", "Icon"), null, nmOn ? 3 : 2, fg, w -> {
                       sp.edit().putInt("fpNames", nmOn ? 0 : 1).apply();
                       show();
                   }));
                   final boolean fnHome = sp.getBoolean("fpNameHome", true);
-                  sb.addView(row(0xFF26A69A, "📁", t("نام پوشه", "Folder name"), null, fnHome ? 3 : 2, fg, w -> {
+                  sb.addView(row(0xFF26A69A, "📁", t("پوشه", "Folder"), null, fnHome ? 3 : 2, fg, w -> {
                       sp.edit().putBoolean("fpNameHome", !fnHome).apply();
                       show();
                   }));
                   final boolean fnDock = sp.getBoolean("fpNameDock", true);
-                  sb.addView(row(0xFF5C6BC0, "⚓", t("نام پوشه داک", "Dock folder name"), null, fnDock ? 3 : 2, fg, w -> {
+                  sb.addView(row(0xFF5C6BC0, "⚓", t("پوشه داک", "Dock folder"), null, fnDock ? 3 : 2, fg, w -> {
                       sp.edit().putBoolean("fpNameDock", !fnDock).apply();
                       show();
                   }));
@@ -4102,7 +4120,7 @@ jobs:
                       }
                   }
                   final int dres2 = dockReserve();
-                  final boolean dTop2 = sp.getInt("dockPos1", 0) == 1;
+                  final boolean dTop2 = false;
                   wrap.setPadding(0, dTop2 ? dres2 : 0, 0, dTop2 ? 0 : dres2);
                   // switching folders: a picture of the previous folder stays underneath and fades out
                   final ImageView gPanel;
@@ -4120,7 +4138,7 @@ jobs:
                   final FrameLayout ghost = folderBox(f, openW);
                   ghost.setAlpha(0f);
                   final boolean fadeSmall = sp.getBoolean("fpHideSmall", true) && !bridgeOn;
-                  final int blurLvl = sp.getInt("fpBlur", 0);
+                  final int blurLvl = 0;
                   final int bc1 = panelColor(f);
                   final int bc2 = f.color == 0x66FFFFFF ? 0x3A28282C : f.color;
                   final float[] rad = {dp(26)};
@@ -4694,8 +4712,8 @@ jobs:
               View settingsPage(final int fg) {
                   LinearLayout r = vbox();
                   r.addView(topBar(t("تنظیمات", "Settings"), fg));
-                  // toolbar settings open right here, inside this page
-                  r.addView(accordionGroup(0xFF00ACC1, "☰", t("نوار ابزار", "Toolbar"), fg, toolbarContent(fg, null)));
+                  r.addView(row(0xFF00ACC1, "☰", t("نوار ابزار", "Toolbar"), null, 0, fg,
+                          v -> { page = TBAR; show(); }));
                   r.addView(row(0xFF5E35B1, "🏠", t("صفحه خانگی", "Home Page"), null, 0, fg,
                           v -> { page = HPAGE; show(); }));
                   r.addView(row(0xFF5C6BC0, "🎨", t("پس‌زمینه", "Background"), null, 0, fg,
@@ -5170,12 +5188,6 @@ jobs:
                   boolean on1 = sp.getBoolean("dockOn1", true);
                   r.addView(row(0xFF8E24AA, "👁", t("نمایش", "Show"), null, on1 ? 3 : 2, fg,
                           v -> { sp.edit().putBoolean("dockOn1", !on1).apply(); show(); }));
-                  r.addView(row(0xFF5C6BC0, "🎨", t("پس‌زمینه داک", "Dock background"), null, 0, fg,
-                          v -> { page = DOCKBG; show(); }));
-                  r.addView(accordionRow(0xFF2196F3, "🔢", t("تعداد اپلیکیشن", "Apps count"), "dockCount1", 4, 10, 4, "", fg, null));
-                  r.addView(accordionRow(0xFF4CAF50, "📄", t("تعداد صفحه", "Pages count"), "dockPages1", 1, 5, 1, "", fg, null));
-                  r.addView(accordionRow(0xFFFF9800, "📐", t("ارتفاع داک", "Dock height"), "dockH1", 56, 140, 90, " dp", fg, null));
-                  r.addView(accordionRow(0xFF9C27B0, "↔", t("عرض داک", "Dock width"), "dockW1", 60, 100, 96, "%", fg, null));
                   // icon: name on/off, icon size, icon name size (glass boxes, a little fainter)
                   r.addView(accordionGroupFaded(0xFF00CCD6, "📱", t("آیکون", "Icon"), fg, 0.6f, () -> new View[]{
                           toggleRow(0xFF7E57C2, "🏷", t("اسم آیکون", "Icon name"),
@@ -5183,13 +5195,13 @@ jobs:
                                   "hideDockNames", false, fg),
                           accordionRow(0xFF00CCD6, "📱", t("سایز آیکون", "Icon size"), "dockI1", 24, 64, 52, " dp", fg, null),
                           accordionRow(0xFFFFB300, "🔤", t("سایز اسم آیکون", "Icon name size"), "dockTs1", 6, 20, 10, " sp", fg, null)}));
+                  r.addView(row(0xFF5C6BC0, "🎨", t("پس‌زمینه داک", "Dock background"), null, 0, fg,
+                          v -> { page = DOCKBG; show(); }));
+                  r.addView(accordionRow(0xFF2196F3, "🔢", t("تعداد اپلیکیشن", "Apps count"), "dockCount1", 4, 10, 4, "", fg, null));
+                  r.addView(accordionRow(0xFF4CAF50, "📄", t("تعداد صفحه", "Pages count"), "dockPages1", 1, 5, 1, "", fg, null));
+                  r.addView(accordionRow(0xFFFF9800, "📐", t("ارتفاع داک", "Dock height"), "dockH1", 56, 140, 90, " dp", fg, null));
+                  r.addView(accordionRow(0xFF9C27B0, "↔", t("عرض داک", "Dock width"), "dockW1", 60, 100, 96, "%", fg, null));
                   r.addView(accordionRow(0xFF26C6DA, "🔲", t("لبه‌ها", "Edges"), "dockRound", 0, 100, 20, "", fg, null));
-
-                  int pos = sp.getInt("dockPos1", 0);
-                  r.addView(row(0xFF29B6F6, "⬇", t("مکان داک: پایین", "Dock position: Bottom"), null, pos == 0 ? 1 : 0, fg,
-                          v -> { sp.edit().putInt("dockPos1", 0).apply(); show(); }));
-                  r.addView(row(0xFF66BB6A, "⬆", t("مکان داک: بالا", "Dock position: Top"), null, pos == 1 ? 1 : 0, fg,
-                          v -> { sp.edit().putInt("dockPos1", 1).apply(); show(); }));
 
                   return wrapScroll(r);
               }
