@@ -97,7 +97,7 @@ jobs:
                   minSdk 26
                   targetSdk 34
                   // minutes since 1970: always bigger than the previous build, so Android never sees it as a downgrade
-                  versionCode (int) (System.currentTimeMillis() / 60000L)
+                  versionCode System.currentTimeMillis().intdiv(60000L).intValue()
                   versionName "29.1"
               }
               buildTypes {
